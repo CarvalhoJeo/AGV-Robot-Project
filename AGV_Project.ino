@@ -9,23 +9,39 @@
 #define left_IR  A0
 #define right_IR A1
 
-#define line_counter_IR A3
-#define front_IR        2    // porta sensor de anti-colisão
+#define line_counter_IR 8
+#define front_IR        2
 
-#define BLACK_THRESHOLD 200
-#define BASE_SPEED      120
-#define CORRECTION      50 //velocidade da curva
+#define BLACK_THRESHOLD_LEFT 250
+#define BLACK_THRESHOLD_RIGHT 150
+
+#define BASE_SPEED      200
+#define CORRECTION      100
+#define TURN_SPEED      150
+
+enum Command { GO_STRAIGHT, GO_LEFT, GO_RIGHT, FINISH };
+
+Command traj[] = {
+  GO_STRAIGHT,
+  GO_RIGHT,
+  GO_STRAIGHT,
+  GO_LEFT, 
+  FINISH,
+};
 
 enum State {
   FOLLOW_LINE,
   STOP,
-  TURN,
+  TURN_LEFT,
+  TURN_RIGHT,
   TEST
 };
 
-enum State actual_state = FOLLOW_LINE;
+volatile enum State actual_state = FOLLOW_LINE;
 
 volatile bool obstacle_flag = false;
+
+volatile int indexTraj = 0;
 
 void onObstacle() {
   if (digitalRead(front_IR) == LOW) {
@@ -33,6 +49,27 @@ void onObstacle() {
   } else {
     obstacle_flag = false;
   }
+}
+
+void changeState() {
+  if(actual_state != FOLLOW_LINE || digitalRead(line_counter_IR) != HIGH || indexTraj > ( sizeof(traj) / sizeof(traj[0])) ){
+    return;
+  }
+  switch(traj[indexTraj]){
+    case GO_STRAIGHT:
+      actual_state = FOLLOW_LINE;
+      break;
+    case GO_LEFT:
+      actual_state = TURN_LEFT;
+      break;
+    case GO_RIGHT:
+      actual_state = TURN_RIGHT;
+      break;
+    case FINISH:
+      actual_state = STOP;
+      break;
+  }
+  indexTraj++;
 }
 
 void setup() {
@@ -45,8 +82,10 @@ void setup() {
   pinMode(motorB_fwd, OUTPUT);
   pinMode(motorB_bcw, OUTPUT);
 
+  pinMode(line_counter_IR, INPUT);
   pinMode(front_IR, INPUT);
   attachInterrupt(digitalPinToInterrupt(front_IR), onObstacle, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(line_counter_IR), changeState, RISING);  
 }
 
 void loop() {
@@ -61,13 +100,17 @@ void loop() {
       break;
 
     case STOP:
-      if (!obstacle_flag) {
+      if (!obstacle_flag && traj[indexTraj] != FINISH) {
         actual_state = FOLLOW_LINE;
       }
       break;
-
-    case TURN:
-
+    case TURN_LEFT:
+      spinLeft();
+      actual_state = FOLLOW_LINE;
+      break;
+    case TURN_RIGHT:
+      spinRight();
+      actual_state = FOLLOW_LINE;
       break;
     case TEST:
       driveForward(200);
@@ -118,13 +161,42 @@ void stopMotors() {
 }
 
 void followLine() {
-  bool leftOnLine  = analogRead(left_IR)  > BLACK_THRESHOLD;
-  bool rightOnLine = analogRead(right_IR) > BLACK_THRESHOLD;
+  bool leftOnLine  = analogRead(left_IR)  > BLACK_THRESHOLD_LEFT;
+  bool rightOnLine = analogRead(right_IR) > BLACK_THRESHOLD_RIGHT;
 
   int correction = 0;
-  if      (leftOnLine  && !rightOnLine) correction =  CORRECTION;
-  else if (rightOnLine && !leftOnLine)  correction = -CORRECTION;
+  if (leftOnLine  && !rightOnLine){
+    correction =  +CORRECTION;
+  }else if (rightOnLine && !leftOnLine){ 
+    correction = -CORRECTION;
+  }
 
   setMotorA(constrain(BASE_SPEED - correction, -255, 255));
   setMotorB(constrain(BASE_SPEED + correction, -255, 255));
+}
+
+void spinRight() {
+  stopMotors();
+  delay(50);
+  setMotorA(TURN_SPEED);
+  setMotorB(-TURN_SPEED);
+  delay(150);
+  while (analogRead(left_IR) <= BLACK_THRESHOLD_LEFT){
+
+  }
+  stopMotors();
+  delay(50);
+}
+
+void spinLeft() {
+  stopMotors();
+  delay(50);
+  setMotorA(-TURN_SPEED);
+  setMotorB(TURN_SPEED);
+  delay(150);
+  while (analogRead(right_IR) <= BLACK_THRESHOLD_RIGHT){
+
+  }
+  stopMotors();
+  delay(50);
 }
