@@ -9,25 +9,29 @@
 #define left_IR  A0
 #define right_IR A1
 
-#define line_counter_IR 8
+#define line_counter_IR 3
 #define front_IR        2
 
 #define BLACK_THRESHOLD_LEFT 250
 #define BLACK_THRESHOLD_RIGHT 150
 
-#define BASE_SPEED      200
-#define CORRECTION      100
-#define TURN_SPEED      150
+#define BASE_SPEED      250
+#define CORRECTION      150
+#define TURN_SPEED      200
 
 enum Command { GO_STRAIGHT, GO_LEFT, GO_RIGHT, FINISH };
 
 Command traj[] = {
   GO_STRAIGHT,
-  GO_RIGHT,
   GO_STRAIGHT,
-  GO_LEFT, 
-  FINISH,
+  GO_LEFT,
+  GO_STRAIGHT,
+  GO_STRAIGHT,
+  GO_STRAIGHT,
+  FINISH
 };
+
+const int TRAJ_LENGTH = sizeof(traj) / sizeof(traj[0]);
 
 enum State {
   FOLLOW_LINE,
@@ -43,6 +47,10 @@ volatile bool obstacle_flag = false;
 
 volatile int indexTraj = 0;
 
+volatile bool turned = false;
+
+bool lastLineCounter = LOW;
+
 void onObstacle() {
   if (digitalRead(front_IR) == LOW) {
     obstacle_flag = true;
@@ -52,10 +60,16 @@ void onObstacle() {
 }
 
 void changeState() {
-  if(actual_state != FOLLOW_LINE || digitalRead(line_counter_IR) != HIGH || indexTraj > ( sizeof(traj) / sizeof(traj[0])) ){
+  if (actual_state != FOLLOW_LINE || indexTraj >= TRAJ_LENGTH) {
     return;
   }
-  switch(traj[indexTraj]){
+
+  if (turned) {
+    turned = false;
+    return;
+  }
+
+  switch (traj[indexTraj]) {
     case GO_STRAIGHT:
       actual_state = FOLLOW_LINE;
       break;
@@ -67,7 +81,7 @@ void changeState() {
       break;
     case FINISH:
       actual_state = STOP;
-      break;
+      return;
   }
   indexTraj++;
 }
@@ -85,10 +99,16 @@ void setup() {
   pinMode(line_counter_IR, INPUT);
   pinMode(front_IR, INPUT);
   attachInterrupt(digitalPinToInterrupt(front_IR), onObstacle, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(line_counter_IR), changeState, RISING);  
 }
 
 void loop() {
+  bool currentLineCounter = digitalRead(line_counter_IR);
+  Serial.println(currentLineCounter);
+  if (currentLineCounter == HIGH && lastLineCounter == LOW) {
+    changeState();
+  }
+  lastLineCounter = currentLineCounter;
+
   switch (actual_state) {
     case FOLLOW_LINE:
       if (obstacle_flag) {
@@ -100,18 +120,22 @@ void loop() {
       break;
 
     case STOP:
+      stopMotors();
       if (!obstacle_flag && traj[indexTraj] != FINISH) {
         actual_state = FOLLOW_LINE;
       }
       break;
+
     case TURN_LEFT:
       spinLeft();
       actual_state = FOLLOW_LINE;
       break;
+
     case TURN_RIGHT:
       spinRight();
       actual_state = FOLLOW_LINE;
       break;
+
     case TEST:
       driveForward(200);
       delay(2000);
@@ -165,9 +189,9 @@ void followLine() {
   bool rightOnLine = analogRead(right_IR) > BLACK_THRESHOLD_RIGHT;
 
   int correction = 0;
-  if (leftOnLine  && !rightOnLine){
-    correction =  +CORRECTION;
-  }else if (rightOnLine && !leftOnLine){ 
+  if (leftOnLine && !rightOnLine) {
+    correction = +CORRECTION;
+  } else if (rightOnLine && !leftOnLine) {
     correction = -CORRECTION;
   }
 
@@ -180,10 +204,11 @@ void spinRight() {
   delay(50);
   setMotorA(TURN_SPEED);
   setMotorB(-TURN_SPEED);
-  delay(150);
-  while (analogRead(left_IR) <= BLACK_THRESHOLD_LEFT){
-
-  }
+  delay(80);
+  while (analogRead(left_IR) <= BLACK_THRESHOLD_LEFT) {}
+  while (analogRead(right_IR) <= BLACK_THRESHOLD_RIGHT) {} 
+  delay(100);
+  turned = true;
   stopMotors();
   delay(50);
 }
@@ -193,10 +218,11 @@ void spinLeft() {
   delay(50);
   setMotorA(-TURN_SPEED);
   setMotorB(TURN_SPEED);
-  delay(150);
-  while (analogRead(right_IR) <= BLACK_THRESHOLD_RIGHT){
-
-  }
+  delay(80);
+  while (analogRead(right_IR) <= BLACK_THRESHOLD_RIGHT) {}
+  while (analogRead(left_IR) <= BLACK_THRESHOLD_LEFT) {}
+  delay(100);
+  turned = true;
   stopMotors();
   delay(50);
 }
