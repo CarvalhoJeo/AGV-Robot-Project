@@ -43,7 +43,7 @@ enum State {
 
 volatile enum State actual_state = FOLLOW_LINE;
 
-volatile bool obstacle_flag = false;
+volatile bool obstacle = false;
 
 volatile int indexTraj = 0;
 
@@ -53,9 +53,9 @@ bool lastLineCounter = LOW;
 
 void onObstacle() {
   if (digitalRead(front_IR) == LOW) {
-    obstacle_flag = true;
+    obstacle = true;
   } else {
-    obstacle_flag = false;
+    obstacle = false;
   }
 }
 
@@ -111,7 +111,7 @@ void loop() {
 
   switch (actual_state) {
     case FOLLOW_LINE:
-      if (obstacle_flag) {
+      if (obstacle) {
         stopMotors();
         actual_state = STOP;
       } else {
@@ -121,7 +121,7 @@ void loop() {
 
     case STOP:
       stopMotors();
-      if (!obstacle_flag && traj[indexTraj] != FINISH) {
+      if (!obstacle && traj[indexTraj] != FINISH) {
         actual_state = FOLLOW_LINE;
       }
       break;
